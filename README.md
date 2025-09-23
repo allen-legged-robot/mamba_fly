@@ -44,12 +44,12 @@ git clone git@github.com:anish-bhattacharya/vitfly.git
 cd vitfly
 ```
 
-In order to replicate Unity environments similar to those we use for training and testing, you will need to download `environments.tar` (1GB) from [Datashare](https://upenn.app.box.com/v/ViT-quad-datashare) and extract it to the right location (below). We provide the medium-level spheres scene and a trees scene. Other obstacle environments are provided by [ICRA 2022 DodgeDrone Competition](https://github.com/uzh-rpg/agile_flight).
+In order to replicate Unity environments similar to those we use for training and testing, you will need to download `environments.tar` (1GB) from [Datashare](https://upenn.app.box.com/v/ViT-quad-datashare) (pw: vitfly2025) and extract it to the right location (below). We provide the medium-level spheres scene and a trees scene. Other obstacle environments are provided by [ICRA 2022 DodgeDrone Competition](https://github.com/uzh-rpg/agile_flight).
 ```
 tar -xvf <path/to/environments.tar> -C flightmare/flightpy/configs/vision
 ```
 
-You will also need to download our Unity resources and binaries. Download `flightrender.tar` (450MB) from [Datashare](https://upenn.app.box.com/v/ViT-quad-datashare) and then:
+You will also need to download our Unity resources and binaries. Download `flightrender.tar` (450MB) from [Datashare](https://upenn.app.box.com/v/ViT-quad-datashare) (pw: vitfly2025)  and then:
 ```
 tar -xvf <path/to/flightrender.tar> -C flightmare/flightrender
 ```
@@ -67,7 +67,7 @@ cd src/vitfly
 
 #### Download pretrained weights
 
-Download `pretrained_models.tar` (50MB) from [Datashare](https://upenn.app.box.com/v/ViT-quad-datashare). This tarball includes pretrained models for ConvNet, LSTMnet, UNet, ViT, and ViT+LSTM (our best model).
+Download `pretrained_models.tar` (50MB) from [Datashare](https://upenn.app.box.com/v/ViT-quad-datashare) (pw: vitfly2025). This tarball includes pretrained models for ConvNet, LSTMnet, UNet, ViT, and ViT+LSTM (our best model).
 ```
 tar -xvf <path/to/pretrained_models.tar> -C models
 ```
@@ -101,7 +101,7 @@ Some details: Change `1` to any number of trials you'd like to run. If you look 
 
 #### Download and set up our dataset
 
-The training dataset is available as `data.zip` (2.5GB, 3.4GB unzipped) from the [Datashare](https://upenn.app.box.com/v/ViT-quad-datashare). Make some necesary directories and unzip this data (this may take some time):
+The training dataset is available as `data.zip` (2.5GB, 3.4GB unzipped) from the [Datashare](https://upenn.app.box.com/v/ViT-quad-datashare) (pw: vitfly2025). Make some necesary directories and unzip this data (this may take some time):
 ```
 mkdir -p training/datasets/data training/logs
 unzip <path/to/data.zip> -d training/datasets/data
