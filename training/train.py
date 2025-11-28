@@ -129,6 +129,8 @@ class TRAINER:
             self.model = model_library.LSTMNetVIT().to(self.device).float()
         elif self.model_type == 'UNet':
             self.model = model_library.UNetConvLSTMNet().to(self.device).float()
+        elif self.model_type == 'MambaLSTM':
+            self.model = model_library.LSTMNetMamba().to(self.device).float()
         else:
             self.mylogger(f'[SETUP] Invalid model_type {self.model_type}. Exiting.')
             exit()

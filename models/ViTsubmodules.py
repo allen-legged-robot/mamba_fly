@@ -10,7 +10,9 @@ quadrotor obstacle avoidance" by Bhattacharya, et. al
 @source: https://github.com/git-dhruv/Segformer
 """
 
+import torch
 import torch.nn as nn
+from mamba_ssm import Mamba
 
 class OverlapPatchMerging(nn.Module):
     def __init__(self, in_channels, out_channels, patch_size, stride, padding):
@@ -145,4 +147,45 @@ class MixTransformerEncoderLayer(nn.Module):
             x = x + self._ffn[i].forward(x, H, W) #BNC
             x = self._lNorm[i].forward(x) #BNC
         x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous() #BCHW
+        return x
+
+class MambaEncoderLayer(nn.Module):
+    """
+    Mamba-based encoder layer that replaces transformer attention with Mamba SSM
+    """
+    def __init__(self, in_channels, out_channels, patch_size, stride, padding,
+                 n_layers, d_state=16, d_conv=4, expand=2):
+        super().__init__()
+        self.patchMerge = OverlapPatchMerging(in_channels, out_channels, patch_size, stride, padding)
+        # Replace attention mechanism with Mamba blocks
+        self._mamba = nn.ModuleList([
+            Mamba(
+                d_model=out_channels,
+                d_state=d_state,
+                d_conv=d_conv,
+                expand=expand
+            ) for _ in range(n_layers)
+        ])
+        self._lNorm = nn.ModuleList([nn.LayerNorm(out_channels) for _ in range(n_layers)])
+
+    def forward(self, x):
+        """ Run one block of the Mamba encoder
+
+        :param x: tensor with shape (B, C, H, W) where
+            B is the Batch size
+            C is the number of Channels
+            H and W are the Height and Width
+        :return: tensor with shape (B, C, H, W)
+        """
+        B, C, H_in, W_in = x.shape
+        x, H, W = self.patchMerge(x)  # B N embed_dim (out_channels)
+
+        for i in range(len(self._mamba)):
+            # Mamba expects (B, L, D) format where L is sequence length
+            # x is already in (B, N, C) format where N = H*W
+            x = x + self._mamba[i](x)  # Residual connection
+            x = self._lNorm[i](x)
+
+        # Reshape back to (B, C, H, W)
+        x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
         return x
