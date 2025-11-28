@@ -1,7 +1,7 @@
 device = cuda
-basedir = /home/anish/vitfly_ws/src/vitfly
+basedir = /home/allen/ws/mamba_fly/src/vitfly
 logdir = training/logs
-datadir = training/datasets
+datadir = /media/allen/WYN2021
 
 dataset = data
 short = 0

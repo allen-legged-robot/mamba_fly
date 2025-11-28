@@ -54,6 +54,7 @@ class TRAINER:
             self.lr_decay = args.lr_decay
             self.save_model_freq = args.save_model_freq
             self.val_freq = args.val_freq
+            self.num_workers = args.num_workers
 
         else:
             raise Exception("Args are not provided")
@@ -106,7 +107,7 @@ class TRAINER:
         else:    
             train_val_dirs = None
 
-        self.dataloader(val_split=self.val_split, short=self.short, seed=self.seed, train_val_dirs=train_val_dirs)
+        self.dataloader(val_split=self.val_split, short=self.short, seed=self.seed, train_val_dirs=train_val_dirs, num_workers=self.num_workers)
 
         # TODO hardcoding num_training_steps to be the number of trajectories instead of number of images
         self.num_training_steps = self.train_trajlength.shape[0]
@@ -153,9 +154,9 @@ class TRAINER:
         self.mylogger(f'[SETUP] Loading checkpoint from {checkpoint_path}, already trained for {self.num_eps_trained} epochs')
         self.model.load_state_dict(torch.load(checkpoint_path, map_location=self.device))
 
-    def dataloader(self, val_split, short=0, seed=None, train_val_dirs=None):
+    def dataloader(self, val_split, short=0, seed=None, train_val_dirs=None, num_workers=4):
         self.mylogger(f'[DATALOADER] Loading from {self.dataset_dir}')
-        train_data, val_data, is_png, (self.train_dirs, self.val_dirs) = dataloader(opj(self.basedir, self.dataset_dir), val_split=val_split, short=short, seed=seed, train_val_dirs=train_val_dirs)
+        train_data, val_data, is_png, (self.train_dirs, self.val_dirs) = dataloader(opj(self.basedir, self.dataset_dir), val_split=val_split, short=short, seed=seed, train_val_dirs=train_val_dirs, num_workers=num_workers)
         self.train_meta, self.train_ims, self.train_trajlength, self.train_desvel, self.train_currquat, self.train_currctbr = train_data
         self.val_meta, self.val_ims, self.val_trajlength, self.val_desvel, self.val_currquat, self.val_currctbr = val_data
         self.mylogger(f'[DATALOADER] Dataloading done | train images {self.train_ims.shape}, val images {self.val_ims.shape}')
@@ -320,6 +321,7 @@ def argparsing():
     parser.add_argument('--lr_decay', action='store_true', default=False, help='whether to use lr_decay, hardcoded to exponentially decay to 0.01 * lr by end of training')
     parser.add_argument('--save_model_freq', type=int, default=25, help='frequency with which to save model checkpoints')
     parser.add_argument('--val_freq', type=int, default=10, help='frequency with which to evaluate on validation set')
+    parser.add_argument('--num_workers', type=int, default=8, help='number of worker processes for parallel data loading')
 
     args = parser.parse_args()
     print(f'[CONFIGARGPARSE] Parsing args from config file {args.config}')

@@ -15,9 +15,52 @@ import numpy as np
 import torch
 import random
 import getpass
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 uname = getpass.getuser()
 
-def dataloader(data_dir, val_split=0., short=0, seed=None, train_val_dirs=None):
+def process_trajectory_folder(traj_folder, cropHeight, cropWidth):
+    """Process a single trajectory folder (load images and metadata)"""
+    im_files = sorted(glob.glob(opj(traj_folder, '*.png')))
+
+    # check for empty folder
+    if len(im_files) == 0:
+        return None, 'empty', None, None
+
+    csv_file = 'data.csv'
+    try:
+        # float64 is required to read ros timestamps without rounding
+        traj_meta = np.genfromtxt(opj(traj_folder, csv_file), delimiter=',', dtype=np.float64)[1:]
+        traj_meta[:,-1] = np.int32(np.genfromtxt(opj(traj_folder, csv_file), delimiter=',', dtype="bool")[1:,-1])
+    except Exception as e:
+        return None, f'csv_error: {e}', None, None
+
+    # check for nan in metadata
+    if np.isnan(traj_meta).any():
+        traj_meta = traj_meta[:,:-1]
+
+    # read png files and scale them by 255.0 to recover normalized (0, 1) range
+    traj_ims = np.asarray([cv2.imread(im_file, cv2.IMREAD_GRAYSCALE) for im_file in im_files], dtype=np.float32) / 255.0
+
+    # check for mismatch in number of images and telemetry entries
+    if traj_ims.shape[0] != traj_meta.shape[0]:
+        # usually the last image may not have a corresponding line of telemetry
+        last_im_timestamp = os.path.basename(im_files[-1])[:-4]
+        if float(last_im_timestamp) > traj_meta[-1, 1]:
+            traj_ims = traj_ims[:-1]
+        if traj_ims.shape[0] != traj_meta.shape[0]:
+            return None, 'mismatch', None, None
+
+    # resize images
+    traj_ims = np.array([cv2.resize(img, (cropWidth, cropHeight)) for img in traj_ims])
+
+    # extract desired velocities and quaternions
+    desired_vels = traj_meta[:, 2]
+    curr_quats = traj_meta[:, 3:7]
+
+    return traj_ims, traj_meta, desired_vels, curr_quats
+
+def dataloader(data_dir, val_split=0., short=0, seed=None, train_val_dirs=None, num_workers=4):
     cropHeight = 60
     cropWidth = 90
 
@@ -44,66 +87,43 @@ def dataloader(data_dir, val_split=0., short=0, seed=None, train_val_dirs=None):
     collisionImages = 0
     collisionFolders = 0
 
-    for i, traj_folder in enumerate(traj_folders):
-        if len(traj_folders)//10 > 0 and i % (len(traj_folders)//10) == 0:
-            print(f'[DATALOADER] Loading folder {os.path.basename(traj_folder)}, folder # {i+1}/{len(traj_folders)}, time elapsed {time.time()-start_dataloading:.2f}s')
-        im_files = sorted(glob.glob(opj(traj_folder, '*.png')))
+    print(f'[DATALOADER] Using {num_workers} worker threads for parallel loading')
 
-        # check for empty folder
-        if len(im_files) == 0:
-            print(f'[DATALOADER] No images in {os.path.basename(traj_folder)}, skipping')
+    # Use multithreading to load trajectory folders in parallel
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        process_func = partial(process_trajectory_folder, cropHeight=cropHeight, cropWidth=cropWidth)
+        results = list(executor.map(process_func, traj_folders))
+
+    # Process results
+    for i, (traj_ims, status_or_meta, des_vels, quats) in enumerate(results):
+        if len(traj_folders)//10 > 0 and i % (len(traj_folders)//10) == 0:
+            print(f'[DATALOADER] Processing folder {os.path.basename(traj_folders[i])}, folder # {i+1}/{len(traj_folders)}, time elapsed {time.time()-start_dataloading:.2f}s')
+
+        if traj_ims is None:
+            # Handle skipped folders
+            if status_or_meta == 'empty':
+                print(f'[DATALOADER] No images in {os.path.basename(traj_folders[i])}, skipping')
+            elif status_or_meta == 'mismatch':
+                print(f'[DATALOADER] Number of images and telemetry do not match in {os.path.basename(traj_folders[i])}, skipping')
+                skippedFolders += 1
+            elif 'csv_error' in status_or_meta:
+                print(f'[DATALOADER] CSV error in {os.path.basename(traj_folders[i])}: {status_or_meta}, skipping')
+                skippedFolders += 1
             continue
 
-        csv_file = 'data.csv'
-        # float64 is required to read ros timestamps without rounding
-        # NOTE not sure if float64 will break training (torch dtypes)
-        traj_meta = np.genfromtxt(opj(traj_folder, csv_file), delimiter=',', dtype=np.float64)[1:]
-        traj_meta[:,-1] = np.int32(np.genfromtxt(opj(traj_folder, csv_file), delimiter=',', dtype="bool")[1:,-1])
+        traj_meta = status_or_meta
 
-        # check for collisions in trajectory
-        # if traj_meta[:,-1].sum() > 0:
-        #     print(f'[DATALOADER] Collision in {os.path.basename(traj_folder)}, skipping')
-        #     collisionFolders += 1
-        #     collisionImages += int(len(traj_meta[:,0]))
-        #     continue
-
-        # check for nan in metadata
-        if np.isnan(traj_meta).any():
-            print(f'[DATALOADER] NaN in {os.path.basename(traj_folder)}, skipping')
-            traj_meta = traj_meta[:,:-1]
-            
-
-        # read png files and scale them by 255.0 to recover normalized (0, 1) range
-        # for npy files, manually normalize them by a set value (0.09 for "old" dataset)
-        traj_ims = np.asarray([cv2.imread(im_file, cv2.IMREAD_GRAYSCALE) for im_file in im_files], dtype=np.float32) / 255.0
-
-        # check for mismatch in number of images and telemetry entries
-        if traj_ims.shape[0] != traj_meta.shape[0]:
-
-            # usually the last image may not have a corresponding line of telemetry, so check specifically for that case
-            last_im_timestamp = os.path.basename(im_files[-1])[:-4]
-            if float(last_im_timestamp) > traj_meta[-1, 1]:
-                traj_ims = traj_ims[:-1]
-                print(f'[DATALOADER] Extra image found at end of data, cutting it from {os.path.basename(traj_folder)}')
-            if traj_ims.shape[0] != traj_meta.shape[0]:
-                print(f'[DATALOADER] Number of images and telemetry still do not match in {os.path.basename(traj_folder)}, skipping')
-                skippedFolders += 1
-                skippedImages += int(len(traj_meta[:,0]))
-                continue
-        temp = [cv2.resize(img, (cropWidth, cropHeight)) for img in traj_ims]
-
-        traj_ims = np.array(temp)
+        # Append to lists
         for ii in range(traj_meta.shape[0]):
-            desired_vels.append(traj_meta[ii, 2])
-            q = traj_meta[ii, 3:7]
-            rmat = q 
-            curr_quats.append(rmat)
+            desired_vels.append(des_vels[ii])
+            curr_quats.append(quats[ii])
+
         try:
             traj_ims_full.append(traj_ims)
             traj_meta_full.append(traj_meta)
         except:
             print(f'[DATALOADER] {traj_ims.shape}')
-            print(f"[DATALOADER] Suspected empty image, folder {os.path.basename(traj_folder)}")
+            print(f"[DATALOADER] Suspected empty image, folder {os.path.basename(traj_folders[i])}")
 
     print(skippedFolders, skippedImages)
     print(collisionFolders, collisionImages)
